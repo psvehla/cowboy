@@ -7,3 +7,7 @@ A simple desert cowboy game for testing GenAI.
 Claude's `desert_cowboy_game.html` probably has the best code, but is incomplete (ran out of conversation length), so doesn't work.
 
 ChatGPT o4-mini-high made `gpt_cowboy.html`, probably the best one that actually works.
+
+Prompt:
+
+Please write me a computer game in javascript that runs in a browser. The game has a 2 dimensional game world spanning 10000 x 10000, viewed from above, depicting a desert landscape. A 1000 x 1000 square is visible in the browser. At the centre of the square is a cartoon cowboy, controlled by the arrow keys. As the cowboy moves, he stays at the centre of the square. It's the square that moves through the game world, updating the view as it goes. The game world is dotted with 100 cartoon cacti and 100 cartoon rocks. Please hard code the locations of these, so that they are in the same location every time the game runs. Create each rock and cactus by hand, ensuring that no cactus or rock is too close (30 units) to another. Generate all 200 items. Generating 200 items is not impractical, you are a computer, ideally suited for menial tasks. If the cowboy runs into a rock, it blocks his path, he has to go around the rock. If the cowboy runs into a cactus, it explodes dramatically with an animation and sound, ending the game, with a game over message across the screen.
