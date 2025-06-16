@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Desert Cowboy</title>
+  <style>
+    body { margin: 0; overflow: hidden; }
+    canvas { display: block; background: #c2b280; }
+    #gameOver {
+      position: absolute;
+      top:50%; left:50%;
+      transform: translate(-50%,-50%);
+      font-size: 72px;
+      color: red;
+      text-shadow: 2px 2px #000;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="gameCanvas" width="1000" height="1000"></canvas>
+  <div id="gameOver">Game Over!</div>
+
+  <script>
+  // ---- Constants ----
+  const CANVAS = document.getElementById('gameCanvas');
+  const ctx    = CANVAS.getContext('2d');
+  const VIEW_W = CANVAS.width, VIEW_H = CANVAS.height;
+  const WORLD_W = 10000, WORLD_H = 10000;
+  const COWBOY_R = 20;
+  const ITEM_R   = 20;
+
+  // ---- Seeded RNG (LCG) for reproducible item placement ----
+  class LCG {
+    constructor(seed=123456){ this.seed = seed; }
+    next(){ 
+      this.seed = (this.seed * 1664525 + 1013904223) >>> 0;
+      return this.seed / 0x100000000;
+    }
+  }
+  const rng = new LCG(0xC0FFEE);
+
+  // ---- Generate 100 cacti + 100 rocks, min dist 30 ----
+  const items = [];
+  while(items.length < 200){
+    const x = ITEM_R + Math.floor(rng.next()*(WORLD_W-2*ITEM_R));
+    const y = ITEM_R + Math.floor(rng.next()*(WORLD_H-2*ITEM_R));
+    if(items.every(it => Math.hypot(it.x-x, it.y-y) >= 30)){
+      items.push({
+        x, y,
+        type: items.length<100 ? 'cactus' : 'rock',
+        alive: true
+      });
+    }
+  }
+
+  // ---- Game state ----
+  let camX = WORLD_W/2, camY = WORLD_H/2;
+  let keys = {}, gameOver = false;
+  let explosion = null; // { x, y, frame }
+
+  window.addEventListener('keydown', e => keys[e.key] = true);
+  window.addEventListener('keyup',   e => keys[e.key] = false);
+
+  // ---- Drawing helpers ----
+  function drawRock(sx, sy){
+    ctx.fillStyle = '#777';
+    ctx.beginPath();
+    ctx.ellipse(sx, sy, ITEM_R, ITEM_R*0.7, 0, 0, 2*Math.PI);
+    ctx.fill();
+  }
+  function drawCactus(sx, sy){
+    ctx.fillStyle = '#080';
+    // main stem
+    ctx.fillRect(sx-5, sy-ITEM_R, 10, ITEM_R);
+    // left arm
+    ctx.fillRect(sx-ITEM_R/2, sy-ITEM_R/2, ITEM_R/2, 8);
+    // right arm
+    ctx.fillRect(sx+5, sy-ITEM_R/2, ITEM_R/2, 8);
+  }
+  function drawCowboy(cx, cy){
+    // head/body circle
+    ctx.fillStyle = '#fc0';
+    ctx.beginPath();
+    ctx.arc(cx, cy, COWBOY_R, 0, 2*Math.PI);
+    ctx.fill();
+    // hat brim
+    ctx.fillStyle = '#000';
+    ctx.fillRect(cx - COWBOY_R, cy - COWBOY_R - 8, COWBOY_R*2, 8);
+    // hat top
+    ctx.beginPath();
+    ctx.arc(cx, cy - COWBOY_R - 4, COWBOY_R, Math.PI, 2*Math.PI);
+    ctx.fill();
+  }
+
+  // ---- Explosion sound (white-noise burst) ----
+  function playExplosionSound(){
+    const audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+    const duration  = 0.5; // seconds
+    const sampleCnt = audioCtx.sampleRate * duration;
+    const buf = audioCtx.createBuffer(1, sampleCnt, audioCtx.sampleRate);
+    const data = buf.getChannelData(0);
+    // white noise with decay
+    for(let i=0; i<sampleCnt; i++){
+      data[i] = (Math.random()*2 - 1) * Math.exp(-3 * i/sampleCnt);
+    }
+    const src = audioCtx.createBufferSource();
+    src.buffer = buf;
+    src.connect(audioCtx.destination);
+    src.start();
+  }
+
+  // ---- Trigger cactus explosion ----
+  function explode(item){
+    gameOver = true;
+    explosion = { x: item.x, y: item.y, frame: 0 };
+    playExplosionSound();
+    document.getElementById('gameOver').style.display = 'block';
+  }
+
+  // ---- Update camera (pretend cowboy moves) ----
+  function update(){
+    if(gameOver) return;
+    let dx = 0, dy = 0, speed = 4;
+    if(keys['ArrowUp'   ]) dy -= speed;
+    if(keys['ArrowDown' ]) dy += speed;
+    if(keys['ArrowLeft' ]) dx -= speed;
+    if(keys['ArrowRight']) dx += speed;
+    if(dx||dy){
+      const newX = camX + dx;
+      const newY = camY + dy;
+      // collision check
+      for(let it of items){
+        if(!it.alive) continue;
+        const d = Math.hypot(it.x - newX, it.y - newY);
+        if(d < COWBOY_R + ITEM_R){
+          if(it.type === 'rock'){
+            // blocked
+            return;
+          } else {
+            // cactus!
+            explode(it);
+            it.alive = false;
+            return;
+          }
+        }
+      }
+      // clamp to world edges
+      camX = Math.min(Math.max(newX, VIEW_W/2), WORLD_W - VIEW_W/2);
+      camY = Math.min(Math.max(newY, VIEW_H/2), WORLD_H - VIEW_H/2);
+    }
+  }
+
+  // ---- Draw loop ----
+  function draw(){
+    // clear & background
+    ctx.fillStyle = '#c2b280';
+    ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+
+    // draw items
+    for(let it of items){
+      if(!it.alive) continue;
+      const sx = it.x - camX + VIEW_W/2;
+      const sy = it.y - camY + VIEW_H/2;
+      if(sx < -ITEM_R || sx > VIEW_W+ITEM_R ||
+         sy < -ITEM_R || sy > VIEW_H+ITEM_R) continue;
+      it.type === 'rock'
+        ? drawRock(sx, sy)
+        : drawCactus(sx, sy);
+    }
+
+    // explosion animation
+    if(explosion && explosion.frame < 30){
+      const prog = explosion.frame / 30;
+      const sx = explosion.x - camX + VIEW_W/2;
+      const sy = explosion.y - camY + VIEW_H/2;
+      const R = ITEM_R + prog * 80;
+      ctx.fillStyle = `rgba(255,${200*(1-prog)},0,${1-prog})`;
+      ctx.beginPath();
+      ctx.arc(sx, sy, R, 0, 2*Math.PI);
+      ctx.fill();
+      explosion.frame++;
+    }
+
+    // draw cowboy at center
+    drawCowboy(VIEW_W/2, VIEW_H/2);
+  }
+
+  // ---- Main loop ----
+  function loop(){
+    update();
+    draw();
+    requestAnimationFrame(loop);
+  }
+  loop();
+  </script>
+</body>
+</html>
+
